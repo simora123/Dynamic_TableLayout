@@ -1,0 +1,229 @@
+import arcpy, os, sys
+relpath = os.path.dirname(sys.argv[0])
+import PDFmerger
+
+# Variable List used in below for loop. Loops thru Municipalities.
+state = ["CARROLL TWP",\
+"CHANCEFORD TWP",\
+"CODORUS TWP",\
+"CONEWAGO TWP",\
+"CROSS ROADS BORO",\
+"DOVER TWP",\
+"EAST HOPEWELL TWP",\
+"EAST MANCHESTER TWP",\
+"FAIRVIEW TWP",\
+"FAWN TWP",\
+"FELTON BORO",\
+"FRANKLIN TWP",\
+"GLEN ROCK BORO",\
+"GOLDSBORO BORO",\
+"HALLAM BORO",\
+"HEIDELBERG TWP",\
+"HELLAM TWP",\
+"HOPEWELL TWP",\
+"JACKSON TWP",\
+"LOWER CHANCEFORD TWP",\
+"LOWER WINDSOR TWP",\
+"MANHEIM TWP",\
+"MANCHESTER TWP",\
+"MONAGHAN TWP",\
+"NEWBERRY TWP",\
+"NORTH CODORUS TWP",\
+"PARADISE TWP",\
+"PENN TWP",\
+"SEVEN VALLEYS BORO",\
+"SHREWSBURY TWP",\
+"SPRING GARDEN TWP",\
+"SPRINGETTSBURY TWP",\
+"SPRINGFIELD TWP",\
+"WARRINGTON TWP",\
+"WASHINGTON TWP",\
+"WEST MANCHESTER TWP",\
+"WINDSOR TWP",\
+"YORK CITY",\
+"YORK TWP"]
+
+#Loops thru Municipalities in State List
+for s in state:
+    print "Starting process for {}".format(s)
+    #Reference MXD and layers
+    mxd = arcpy.mapping.MapDocument(relpath + r"\FloodedRoadways_11x17_New.mxd")
+    countyLayer = arcpy.mapping.ListLayers(mxd, "Identified Flooding Locations")[0]
+    queryLayer = arcpy.mapping.ListLayers(mxd, r"Selected Flooded Roadways") [0]
+
+    #Reference page layout elements
+    for elm in arcpy.mapping.ListLayoutElements(mxd):
+      if elm.name == "bar1":  bar1 = elm
+      if elm.name == "bar2":  bar2 = elm
+      if elm.name == "bar1txt":  bar1txt = elm
+      if elm.name == "bar2txt":  bar2txt = elm
+      if elm.name == "NoGrowth": noGrowth = elm
+      if elm.name == "horzLine": horzLine = elm
+      if elm.name == "vertLine": vertLine = elm
+      if elm.name == "cellTxt":  cellTxt = elm
+      if elm.name == "headerTxt": headerTxt = elm
+
+    #Clean-up before next page
+    for elm in arcpy.mapping.ListLayoutElements(mxd, "GRAPHIC_ELEMENT", "*clone*"):
+      elm.delete()
+    for elm in arcpy.mapping.ListLayoutElements(mxd, "TEXT_ELEMENT", "*clone*"):
+      elm.delete()
+
+    noGrowth.elementPositionX = -3
+    cellTxt.elementPositionX = -3
+    headerTxt.elementPositionX = -3
+    horzLine.elementPositionX = -3
+    vertLine.elementPositionX = -3
+
+    #Reference DDP object and set appropriate page
+    ddp = mxd.dataDrivenPages
+    ddp.currentPageID = ddp.getPageIDFromName(s)
+
+    #Graphic table variable values
+    tableHeight = 3.0
+    tableWidth = 6.9
+    headerHeight = 0.2
+    rowHeight = 0.15
+    upperX = 9.9
+    upperY = 8.7
+
+    #Build selection set
+    stateName = ddp.pageRow.MUNI_NAME
+    arcpy.AddMessage("Processing: " + stateName)
+    arcpy.Select_analysis(countyLayer, "in_memory\select1", "\"MUNI_NAME\" = '" + stateName + "' AND NOT \"Date_Close\" IS NULL")
+    numRecords = int(arcpy.GetCount_management("in_memory\select1").getOutput(0))
+
+    #Sort selection
+    arcpy.Sort_management("in_memory\select1", "in_memory\sort1", [["ID", "ASCENDING"],["Date_Close", "ASCENDING"]])
+
+    #Show selected features
+    queryLayer.definitionQuery = "\"MUNI_NAME\" = '" + stateName + "' AND NOT \"Date_Close\" IS NULL"
+
+    #Add note if there are no counties > 100%
+    if numRecords == 0:
+      print "Nothing Selected"
+      #noGrowth.elementPositionX = 3
+      #noGrowth.elementPositionY = 2
+    else:
+      #if number of rows exceeds page space, resize row height
+      if ((tableHeight - headerHeight) / numRecords) < rowHeight:
+        headerHeight = headerHeight * ((tableHeight - headerHeight) / numRecords) / rowHeight
+        rowHeight = (tableHeight - headerHeight) / numRecords
+
+    #Set and clone vertical line work
+    vertLine.elementHeight = (headerHeight) + (rowHeight * numRecords)
+    vertLine.elementPositionX = upperX
+    vertLine.elementPositionY = upperY
+
+    temp_vert = vertLine.clone("_clone")
+    temp_vert.elementPositionX = upperX + .5
+    temp_vert = vertLine.clone("_clone")
+    temp_vert.elementPositionX = upperX + 2.45
+    temp_vert = vertLine.clone("_clone")
+    temp_vert.elementPositionX = upperX + 3.6
+    temp_vert = vertLine.clone("_clone")
+    temp_vert.elementPositionX = upperX + 4.7
+    temp_vert = vertLine.clone("_clone")
+    temp_vert.elementPositionX = upperX + 5.9
+    temp_vert = vertLine.clone("_clone")
+    temp_vert.elementPositionX = upperX + 6.9
+
+    #Set and clone horizontal line work
+    horzLine.elementWidth = tableWidth
+    horzLine.elementPositionX = upperX
+    horzLine.elementPositionY = upperY
+
+    horzLine.clone("_clone")
+    horzLine.elementPositionY = upperY - headerHeight
+
+    print numRecords
+    y=upperY - headerHeight
+    for horz in range(1, numRecords+1):
+      y = y - rowHeight
+      temp_horz = horzLine.clone("_clone")
+      temp_horz.elementPositionY = y
+
+    #Set header text elements
+    headerTxt.fontSize = headerHeight / 0.0155
+    headerTxt.text = "ID"
+    headerTxt.elementPositionX = upperX + 0.2
+    headerTxt.elementPositionY = upperY - (headerHeight / 2)
+
+    newFieldTxt = headerTxt.clone("_clone")
+    newFieldTxt.text = "Road Name"
+    newFieldTxt.elementPositionX = upperX + 1
+
+    newFieldTxt = headerTxt.clone("_clone")
+    newFieldTxt.text = "Date Closed"
+    newFieldTxt.elementPositionX = upperX + 3
+
+    newFieldTxt = headerTxt.clone("_clone")
+    newFieldTxt.text = "Time Close"
+    newFieldTxt.elementPositionX = upperX + 4.1
+
+    newFieldTxt = headerTxt.clone("_clone")
+    newFieldTxt.text = "Date Open"
+    newFieldTxt.elementPositionX = upperX + 5.2
+
+    newFieldTxt = headerTxt.clone("_clone")
+    newFieldTxt.text = "Time Open"
+    newFieldTxt.elementPositionX = upperX + 6.4
+
+    #Set and clone cell text elements
+    cellTxt.fontSize = rowHeight / 0.0155
+
+    y = upperY - headerHeight
+    rows = arcpy.SearchCursor("in_memory\sort1")
+    for row in rows:
+      x = upperX + 0.05
+      col1CellTxt = cellTxt.clone("_clone")
+      col1CellTxt.text = row.getValue("ID")
+      col1CellTxt.elementPositionX = x
+      col1CellTxt.elementPositionY = y
+
+      col2CellTxt = cellTxt.clone("_clone")
+      #col2CellTxt.text = str(round(row.getValue("EDIT_NAME"), 2))
+      col2CellTxt.text = row.getValue("Street_Nam")
+      col2CellTxt.elementPositionX = x + .5
+      col2CellTxt.elementPositionY = y
+
+      col3CellTxt = cellTxt.clone("_clone")
+      col3CellTxt.text = row.getValue("Date_Close")
+      col3CellTxt.elementPositionX = x + 2.5
+      col3CellTxt.elementPositionY = y
+
+      col4CellTxt = cellTxt.clone("_clone")
+      col4CellTxt.text = row.getValue("Time_clo_1")
+      col4CellTxt.elementPositionX = x + 3.6
+      col4CellTxt.elementPositionY = y
+
+      col5CellTxt = cellTxt.clone("_clone")
+      col5CellTxt.text = row.getValue("Date_Open_Text")
+      col5CellTxt.elementPositionX = x + 4.7
+      col5CellTxt.elementPositionY = y
+
+      col6CellTxt = cellTxt.clone("_clone")
+      col6CellTxt.text = row.getValue("Time_open_")
+      col6CellTxt.elementPositionX = x + 5.9
+      col6CellTxt.elementPositionY = y
+
+      y = y - rowHeight
+
+    #Delete files in_memory
+    arcpy.Delete_management("in_memory\select1")
+    arcpy.Delete_management("in_memory\sort1")
+
+    arcpy.mapping.ExportToPDF(mxd, relpath + "\\" + s + ".pdf")
+
+    # Directory where PDFs will be placed
+    path = r"O:\Transportation\Flooded Roadway Improvement Policy\Data\NEW_SCHEMA\DDPwithDynamicTablesAndGraphs_10_v1"
+    pdf_files = ['{}.pdf'.format(s), 'Appended.pdf']
+    merger = PDFmerger.PdfFileMerger()
+
+    #Appends/Merges Muni PDF with Append PDF
+    for files in pdf_files:
+        merger.append(relpath + "\\" + files)
+    merger.write(relpath + "\\" + s + "_Appended.pdf")
+    merger.close()
+
+    #os.startfile(relpath + "\\" + s + "_Appended.pdf")
